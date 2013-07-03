@@ -36,3 +36,6 @@ nosetests.xml
 
 # Python env
 python2.7.3
+
+# Migrate cache files
+.diaspora-tools-migrate-user-cache

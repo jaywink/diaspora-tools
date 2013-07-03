@@ -1,1 +1,1 @@
-diaspy
+diaspy==0.3
