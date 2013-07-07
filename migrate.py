@@ -179,7 +179,11 @@ def migrate_contacts(args):
                         if tries == 0:
                             counts['notfound'] += 1
                             print("INFO: Could not find user, triggering lookup")
-                            pods[1].lookup_user(user['handle'])
+                            # FIXME: Calling connection.get directly instead of using
+                            # diaspy method which will appear in Search class but is not
+                            # merged to master yet
+                            #~ pods[1].lookup_user(user['handle'])
+                            pods[1].get('people', headers={'accept': 'text/html'}, params={'q': user['handle']})
                             counts['lookups'] += 1
                         if args.wait and tries != attempts:
                             print("-- waiting --")
