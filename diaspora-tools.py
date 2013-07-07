@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-#  migrate.py
+#  diaspora-tools.py
 #  
 #  Copyright 2013 Jason Robinson <jaywink@basshero.org>
 #  
