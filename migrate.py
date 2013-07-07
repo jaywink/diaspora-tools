@@ -9,9 +9,10 @@
 #  (http://opensource.org/licenses/MIT).
 #
 
+from __future__ import print_function
+import time
 import argparse
 import diaspy
-from pprint import pprint
 
 _description_ = """
     This program will help you to migrate your data from one
@@ -33,6 +34,7 @@ def arguments():
     parser.add_argument('targetpod', help='username:password@https://targetpod.tld')
     parser.add_argument('-n', action='store_true', help="Don't do any changes, just print out")
     parser.add_argument('--full', action='store_true', help="Sync all users in all aspects, ignore user cache file")
+    parser.add_argument('--wait', action='store_true', help="Wait for webfinger lookups to resolve")
     return parser.parse_args()
 
 def connect(connstr):
@@ -44,14 +46,14 @@ def connect(connstr):
     return c
     
 def connect_to_pods(args):
-    print("connecting to",args.sourcepod)
+    print("INFO: connecting to",args.sourcepod.split('@')[1])
     sourcepod = connect(args.sourcepod)
-    print("connecting to",args.targetpod)
+    print("INFO: connecting to",args.targetpod.split('@')[1])
     targetpod = connect(args.targetpod)
     return sourcepod, targetpod
 
 def close_connections(pods):
-    print("Logging out of pods...")
+    print("INFO: Logging out of pods...")
     for pod in pods:
         pod.logout()
         
@@ -80,7 +82,14 @@ def get_aspects(conn):
     return conn.getUserInfo()['aspects']
     
 def get_target_aspect(conn, source, args):
-    target = diaspy.models.Aspect(conn, name=source.name)
+    while True:
+        try:
+            target = diaspy.models.Aspect(conn, name=source.name)
+            break
+        except OpenSSL.SSL.ZeroReturnError, e:
+            print("DEBUG: error from diaspy.models.Aspect.__init__() - retrying, ctrl-c to stop...")
+        except KeyboardInterrupt, e:
+            return diaspy.models.Aspect(conn, id=-1, name=source.name)
     if not target.id:
         if not args.n:
             # create aspect
@@ -94,64 +103,87 @@ def add_to_aspect(conn, user_id, aspect_id):
     aspect = diaspy.models.Aspect(conn, aspect_id)
     aspect.addUser(user_id)
     
-def fetch_user(conn, handle):
-    return diaspy.people.User(conn, handle=handle, fetch='data')
+def fetch_user(conn, user):
+    person = diaspy.people.User(conn, handle=user['handle'], fetch='data')
+    if person['id'] == 0:
+        # try profile way, this could be a webfingered user not in contacts table
+        person = diaspy.people.User(conn, guid=user['guid'], fetch='posts')
+    return person
 
 def migrate_contacts(args):
     pods = connect_to_pods(args)
     contacts = get_contacts(pods[0])
     aspects = pods[0].getUserInfo()['aspects']
-    counts, processedguids = {'added':0, 'exists':0, 'notfound':0, 'unknownerrors':0, 'total':len(contacts)}, []
+    counts, processedguids = {'added':0, 'exists':0, 'notfound':0, 'unknownerrors':0, 'total':len(contacts), 'lookups':0}, []
     if not args.full:
         usercache = load_user_cache()
+    if args.wait:
+        attempts = 10
+    else:
+        attempts = 1
     for record in aspects:
         print("**** "+record['name']+" ****")
         source = diaspy.models.Aspect(pods[0], record['id'], record['name'])
-        users = source.getUsers()
-        print("Found ",len(users),"users")
+        while True:
+            try:
+                users = source.getUsers()
+                break
+            except (AttributeError, OpenSSL.SSL.ZeroReturnError), e:
+                print("DEBUG: error from diaspy.models.Aspect.getUsers() - retrying, ctrl-c to stop...")
+            except KeyboardInterrupt, e:
+                close_connections(pods)
+                return counts
+        print("Found",len(users),"users")
         target = get_target_aspect(pods[1], source, args)
         for user in contacts:
             if user['guid'] in users:
                 print("Checking",user['handle'],user['guid'])
-                try:
-                    person = fetch_user(pods[1], user['handle'])
-                    if person['id'] == 0:
-                        raise Exception()
-                    elif not args.full and person['guid'] in usercache:
-                        print("--in cache, skipping--")
-                        continue
+                for tries in range(attempts):
                     try:
-                        if not args.n:
-                            add_to_aspect(pods[1], person['id'], target.id)
-                            if not args.full and person['guid'] not in processedguids:
-                                processedguids.append(person['guid'])
-                            print("ADDED",user['handle'],person['id'])
-                        else:
-                            print("[NO-OP mode] ADDED",user['handle'],person['id'])
-                        counts['added'] += 1
+                        person = fetch_user(pods[1], user)
+                        if person['id'] == 0:
+                            raise Exception()
+                        elif not args.full and person['guid'] in usercache:
+                            print("INFO: --in cache, skipping--")
+                            break
+                        try:
+                            if not args.n:
+                                add_to_aspect(pods[1], person['id'], target.id)
+                                if not args.full and person['guid'] not in processedguids:
+                                    processedguids.append(person['guid'])
+                                print("INFO: ADDED",user['handle'],person['id'])
+                            else:
+                                print("INFO: [NO-OP mode] ADDED",user['handle'],person['id'])
+                            counts['added'] += 1
+                            break
+                        except KeyboardInterrupt, e:
+                            # User wants out
+                            close_connections(pods)
+                            return counts
+                        except Exception, e:
+                            print("ERROR:",e.message)
+                            if e.message.find('400') > -1:
+                                counts['exists'] += 1
+                                if not args.full and person['guid'] not in processedguids:
+                                    processedguids.append(person['guid'])
+                                break
+                            else:
+                                counts['unknownerrors'] += 1
+                                print("ERROR: unknown error")
+                                break
                     except KeyboardInterrupt, e:
                         # User wants out
                         close_connections(pods)
                         return counts
                     except Exception, e:
-                        print(e.message)
-                        if e.message.find('400') > -1:
-                            counts['exists'] += 1
-                            if not args.full and person['guid'] not in processedguids:
-                                processedguids.append(person['guid'])
-                        elif e.message.find('404') > -1:
+                        if tries == 0:
                             counts['notfound'] += 1
-                            print("ERROR - could not find user (when adding)")
-                        else:
-                            counts['unknownerrors'] += 1
-                            print("ERROR - unknown error")
-                except KeyboardInterrupt, e:
-                    # User wants out
-                    close_connections(pods)
-                    return counts
-                except Exception, e:
-                    print("ERROR - could not find user")
-                    counts['notfound'] += 1
+                            print("INFO: Could not find user, triggering lookup")
+                            pods[1].lookup_user(user['handle'])
+                            counts['lookups'] += 1
+                        if args.wait and tries != attempts:
+                            print("-- waiting --")
+                            time.sleep(3)
                 print("----")
     close_connections(pods)
     if not args.full:
