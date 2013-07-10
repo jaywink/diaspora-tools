@@ -35,7 +35,7 @@ For example, to migrate contacts from pod A to pod B, waiting for
 any triggers that happen to other pods (increases script run time),
 the following command would do the trick:
 
-`python diaspora-tools.py --wait jack:password1234@https://pod.example.com jack@password1234@https://pod.foobar.com`
+`python diaspora-tools.py --wait jack:password1234@https://pod.example.com jack:password1234@https://pod.foobar.com`
 
 You can specify the `-n` option to just try out the script without actually making any changes.
 
