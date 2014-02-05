@@ -79,7 +79,7 @@ def get_contacts(conn):
     return contacts.get()
     
 def get_aspects(conn):
-    return conn.getUserInfo()['aspects']
+    return conn.getUserData()['aspects']
     
 def get_target_aspect(conn, source, args):
     while True:
@@ -113,7 +113,7 @@ def fetch_user(conn, user):
 def migrate_contacts(args):
     pods = connect_to_pods(args)
     contacts = get_contacts(pods[0])
-    aspects = pods[0].getUserInfo()['aspects']
+    aspects = pods[0].getUserData()['aspects']
     counts, processedguids = {'added':0, 'exists':0, 'notfound':0, 'unknownerrors':0, 'total':len(contacts), 'lookups':0}, []
     if not args.full:
         usercache = load_user_cache()

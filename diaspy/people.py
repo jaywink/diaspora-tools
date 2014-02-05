@@ -1,7 +1,25 @@
+#!/usr/bin/env python3
+
+import json
 import re
+import warnings
+
 from diaspy.streams import Outer
 from diaspy.models import Aspect
 from diaspy import errors
+from diaspy import search
+
+
+def sephandle(handle):
+    """Separate Diaspora* handle into pod pod and user.
+
+    :returns: two-tuple (pod, user)
+    """
+    if re.match('^[a-zA-Z]+[a-zA-Z0-9_-]*@[a-z0-9.]+\.[a-z]+$', handle) is None:
+        raise errors.InvalidHandleError('{0}'.format(handle))
+    handle = handle.split('@')
+    pod, user = handle[1], handle[0]
+    return (pod, user)
 
 
 class User():
@@ -24,17 +42,15 @@ class User():
     optional parameters. GUID takes precedence over handle when fetching
     user stream. When fetching user data, handle is required.
     """
-    data = {}
-    stream = []
-
     def __init__(self, connection, guid='', handle='', fetch='posts', id=0):
         self._connection = connection
+        self.stream = []
         self.data = {
             'guid': guid,
             'handle': handle,
             'id': id,
         }
-        self._do_fetch(fetch)
+        self._fetch(fetch)
 
     def __getitem__(self, key):
         return self.data[key]
@@ -43,30 +59,32 @@ class User():
         return self['guid']
 
     def __repr__(self):
-        return '{0} ({1})'.format(self['diaspora_name'], self['guid'])
+        return '{0} ({1})'.format(self['name'], self['guid'])
 
-    def _do_fetch(self, fetch):
+    def _fetchstream(self):
+        self.stream = Outer(self._connection, location='people/{0}.json'.format(self['guid']))
+
+    def _fetch(self, fetch):
+        """Fetch user posts or data.
+        """
         if fetch == 'posts':
-            if self['handle'] and self['guid']: self.fetchguid()
-            elif self['guid'] and not self['handle']: self.fetchguid()
-            elif self['handle'] and not self['guid']: self.fetchhandle()
-        elif fetch == 'data' and len(self['handle']):
+            if self['handle'] and not self['guid']: self.fetchhandle()
+            else: self.fetchguid()
+        elif fetch == 'data' and self['handle']:
             self.fetchprofile()
 
-    def _sephandle(self):
-        """Separate D* handle into pod pod and user.
-
-        :returns: two-tuple (pod, user)
+    def _finalize_data(self, data):
+        """Adjustments are needed to have similar results returned
+        by search feature and fetchguid()/fetchhandle().
         """
-        if re.match('^[a-zA-Z]+[a-zA-Z0-9_-]*@[a-z0-9.]+\.[a-z]+$', self['handle']) is None:
-            raise Exception('invalid handle: {0}'.format(self['handle']))
-        handle = self['handle'].split('@')
-        pod, user = handle[1], handle[0]
-        return (pod, user)
-
-    def _finalize_data(self, data, names):
+        names = [('id', 'id'),
+                 ('guid', 'guid'),
+                 ('name', 'name'),
+                 ('avatar', 'avatar'),
+                 ('handle', 'diaspora_id'),
+                 ]
         final = {}
-        for d, f in names:
+        for f, d in names:
             final[f] = data[d]
         return final
 
@@ -77,49 +95,66 @@ class User():
         :param request: request object
         :type request: request
         """
-        if request.status_code != 200:
-            raise Exception('wrong error code: {0}'.format(request.status_code))
-        else:
-            request = request.json()
+        if request.status_code != 200: raise Exception('wrong error code: {0}'.format(request.status_code))
+        request = request.json()
         if not len(request): raise errors.UserError('cannot extract user data: no posts to analyze')
-        names = [('id', 'id'),
-                 ('diaspora_id', 'diaspora_id'),
-                 ('guid', 'guid'),
-                 ('name', 'diaspora_name'),
-                 ('avatar', 'image_urls'),
-                 ]
-        self.data = self._finalize_data(request[0]['author'], names)
-        self.stream = Outer(self._connection, location='people/{0}.json'.format(self['guid']))
+        self.data = self._finalize_data(request[0]['author'])
 
     def fetchhandle(self, protocol='https'):
         """Fetch user data and posts using Diaspora handle.
         """
-        pod, user = self._sephandle()
-        request = self._connection.session.get('{0}://{1}/u/{2}.json'.format(protocol, pod, user))
+        pod, user = sephandle(self['handle'])
+        request = self._connection.get('{0}://{1}/u/{2}.json'.format(protocol, pod, user), direct=True)
         self._postproc(request)
+        self._fetchstream()
 
     def fetchguid(self):
         """Fetch user data and posts using guid.
         """
-        request = self._connection.get('people/{0}.json'.format(self['guid']))
-        self._postproc(request)
-
-    def fetchprofile(self, protocol='https'):
-        """Fetch user data using Diaspora handle.
-        """
-        request = self._connection.get('people.json?q={0}'.format(self['handle']))
-        if request.status_code != 200:
-            raise Exception('wrong error code: {0}'.format(request.status_code))
+        if self['guid']:
+            request = self._connection.get('people/{0}.json'.format(self['guid']))
+            self._postproc(request)
+            self._fetchstream()
         else:
-            request = request.json()
-        if len(request):
-            names = [('id', 'id'),
-                     ('handle', 'diaspora_id'),
-                     ('guid', 'guid'),
-                     ('name', 'diaspora_name'),
-                     ('avatar', 'image_urls'),
-                     ]
-            self.data = self._finalize_data(request[0], names)
+            raise errors.UserError('GUID not set')
+
+    def fetchprofile(self):
+        """Fetches user data.
+        """
+        data = search.Search(self._connection).user(self['handle'])
+        if not data:
+            warnings.warn('user with handle "{0}" has not been found on pod "{1}"'.format(self['handle'], self._connection.pod))
+        else:
+            self.data = data[0]
+
+    def getHCard(self):
+        """Returns XML string containing user HCard.
+        """
+        request = self._connection.get('hcard/users/{0}'.format(self['guid']))
+        if request.status_code != 200: raise errors.UserError('could not fetch hcard for user: {0}'.format(self['guid']))
+        return request.text
+
+
+class Me():
+    """Object represetnting current user.
+    """
+    _userinfo_regex = re.compile(r'window.current_user_attributes = ({.*})')
+    _userinfo_regex_2 = re.compile(r'gon.user=({.*});gon.preloads')
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    def getInfo(self):
+        """This function returns the current user's attributes.
+
+        :returns: dict
+        """
+        request = self._connection.get('bookmarklet')
+        userdata = self._userinfo_regex.search(request.text)
+        if userdata is None: userdata = self._userinfo_regex_2.search(request.text)
+        if userdata is None: raise errors.DiaspyError('cannot find user data')
+        userdata = userdata.group(1)
+        return json.loads(userdata)
 
 
 class Contacts():
@@ -171,5 +206,4 @@ class Contacts():
         request = self._connection.get('contacts.json', params=params)
         if request.status_code != 200:
             raise Exception('status code {0}: cannot get contacts'.format(request.status_code))
-        contacts = [User(self._connection, user['guid'], user['handle'], 'none', user['id']) for user in request.json()]
-        return contacts
+        return [User(self._connection, guid=user['guid'], handle=user['handle'], fetch=None) for user in request.json()]
