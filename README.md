@@ -64,7 +64,13 @@ Required Python modules:
 * `diaspy` ([Marek's fork](https://github.com/marekjm/diaspy))
 * `requests`
 
-All requirements install using `pip` for example:
+For Python 2.x SNI SSL support;
+
+* `ndg-httpsclient`
+* `pyOpenSSL`
+* `pyasn1`
+
+All requirements can be installed using `pip`:
 
 `pip install -r requirements/requirements.txt`
 
