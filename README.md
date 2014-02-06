@@ -1,6 +1,6 @@
 ## diaspora-tools
 
-Some tools relating to the Diaspora* social network
+Some tools relating to the diaspora* social network
 (https://github.com/diaspora/diaspora).
 
 Currently supported features:
@@ -61,9 +61,10 @@ Yes, in the same way as if added via the Diaspora* web interface.
 
 Required Python modules:
 
-* `requests` (required by diaspy which is bundled with diaspora-tools)
+* `diaspy` ([Marek's fork](https://github.com/marekjm/diaspy))
+* `requests`
 
-Install requirements using `pip` for example:
+All requirements install using `pip` for example:
 
 `pip install -r requirements/requirements.txt`
 
@@ -79,12 +80,12 @@ the folder it is extracted to.
 
 ### Credits
 
-Written by Jason Robinson (email: jaywink@basshero.org,
-Diaspora*: jaywink@iliketoast.net).
+Written by Jason Robinson (email: mail@jasonrobinson.me,
+[diaspora* profile](https://iliketoast.net/u/jaywink)).
 
-`diaspy` development version branched from 0.2.0 is bundled because
-diaspy is not mature yet and no suitable release is available. Find
-diaspy full source here: https://github.com/Javafant/diaspora-api
+See [other authors](https://github.com/jaywink/diaspora-tools/graphs/contributors) from GitHub.
+
+Thanks [Moritz Kiefer](https://github.com/Javafant) and [Marek Marecki](https://github.com/marekjm) for the awesome `diaspy` module.
 
 ### License
 

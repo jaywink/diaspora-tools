@@ -3,7 +3,8 @@
 #
 #  diaspora-tools.py
 #
-#  Copyright 2013 Jason Robinson <jaywink@basshero.org>
+#  Authors: Jason Robinson <jaywink@basshero.org>
+#     and others, see README.md
 #
 #  This source code is released under the MIT license
 #  (http://opensource.org/licenses/MIT).
