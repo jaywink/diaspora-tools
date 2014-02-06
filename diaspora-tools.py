@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 #
 #  diaspora-tools.py
-#  
+#
 #  Copyright 2013 Jason Robinson <jaywink@basshero.org>
-#  
-#  This source code is released under the MIT license 
+#
+#  This source code is released under the MIT license
 #  (http://opensource.org/licenses/MIT).
 #
 
@@ -17,11 +17,11 @@ import diaspy
 _description_ = """
     This program will help you to migrate your data from one
     Diaspora* pod to another.
-    
+
     Currently only contact migration is supported and contacts
     must exist on pod where they are migrated to. Any aspects missing
     from target pod will be created there.
-    
+
     A "done" user cache file .diaspora-tools-migrate-user-cache will be
     created in working directory where script is executed. If this
     file exists, user guids there will not be added to any aspects.
@@ -44,7 +44,7 @@ def connect(connstr):
     c = diaspy.connection.Connection(pod=host, username=username, password=password)
     c.login()
     return c
-    
+
 def connect_to_pods(args):
     print("INFO: connecting to",args.sourcepod.split('@')[1])
     sourcepod = connect(args.sourcepod)
@@ -56,13 +56,13 @@ def close_connections(pods):
     print("INFO: Logging out of pods...")
     for pod in pods:
         pod.logout()
-        
+
 def save_user_cache(users):
     cachef = open('.diaspora-tools-migrate-user-cache', 'a')
     for user in users:
         cachef.write(user+'\n')
     cachef.close()
-    
+
 def load_user_cache():
     users = []
     try:
@@ -77,10 +77,10 @@ def load_user_cache():
 def get_contacts(conn):
     contacts = diaspy.people.Contacts(conn)
     return contacts.get()
-    
+
 def get_aspects(conn):
-    return conn.getUserInfo()['aspects']
-    
+    return conn.getUserData()['aspects']
+
 def get_target_aspect(conn, source, args):
     while True:
         try:
@@ -102,7 +102,7 @@ def get_target_aspect(conn, source, args):
 def add_to_aspect(conn, user_id, aspect_id):
     aspect = diaspy.models.Aspect(conn, aspect_id)
     aspect.addUser(user_id)
-    
+
 def fetch_user(conn, user):
     person = diaspy.people.User(conn, handle=user['handle'], fetch='data')
     if person['id'] == 0:
@@ -113,7 +113,7 @@ def fetch_user(conn, user):
 def migrate_contacts(args):
     pods = connect_to_pods(args)
     contacts = get_contacts(pods[0])
-    aspects = pods[0].getUserInfo()['aspects']
+    aspects = pods[0].getUserData()['aspects']
     counts, processedguids = {'added':0, 'exists':0, 'notfound':0, 'unknownerrors':0, 'total':len(contacts), 'lookups':0}, []
     if not args.full:
         usercache = load_user_cache()
@@ -179,11 +179,7 @@ def migrate_contacts(args):
                         if tries == 0:
                             counts['notfound'] += 1
                             print("INFO: Could not find user, triggering lookup")
-                            # FIXME: Calling connection.get directly instead of using
-                            # diaspy method which will appear in Search class but is not
-                            # merged to master yet
-                            #~ pods[1].lookup_user(user['handle'])
-                            pods[1].get('people', headers={'accept': 'text/html'}, params={'q': user['handle']})
+                            diaspy.search.Search(pods[1]).lookupUser(user['handle'])
                             counts['lookups'] += 1
                         if args.wait and tries != attempts:
                             print("-- waiting --")
@@ -196,10 +192,10 @@ def migrate_contacts(args):
 
 def main():
     args = arguments()
-    
+
     counts = migrate_contacts(args)
     print(counts)
-    
+
     return 0
 
 if __name__ == '__main__':
