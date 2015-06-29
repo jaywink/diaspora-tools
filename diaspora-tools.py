@@ -3,7 +3,7 @@
 #
 #  diaspora-tools.py
 #
-#  Authors: Jason Robinson <jaywink@basshero.org>
+#  Authors: Jason Robinson <mail@jasonrobinson.me>
 #     and others, see README.md
 #
 #  This source code is released under the MIT license
@@ -14,6 +14,7 @@ from __future__ import print_function
 import time
 import argparse
 import diaspy
+import OpenSSL
 
 _description_ = """
     This program will help you to migrate your data from one
