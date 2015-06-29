@@ -1,3 +1,5 @@
+**PLEASE NOTE that due to an [upstream bug](https://github.com/marekjm/diaspy/issues/21) the contacts migration is currently broken for any pods running 0.5.x or above code.**
+
 ## diaspora-tools
 
 Some tools relating to the diaspora* social network
